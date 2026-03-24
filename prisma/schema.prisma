@@ -1,0 +1,669 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// PostgreSQL for production (Vercel, Neon, Supabise)
+// Set DATABASE_URL environment variable to your PostgreSQL connection string
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================
+// AUTHENTICATION (NextAuth.js)
+// ============================================
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String    @unique
+  emailVerified DateTime?
+  image         String?
+  password      String?   // For credentials provider (hashed)
+  role          UserRole  @default(user)
+  
+  // Organization/Client association
+  clientId      String?
+  client        Client?   @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  
+  // Account settings
+  isActive      Boolean   @default(true)
+  lastLoginAt   DateTime?
+  
+  // NextAuth relations
+  accounts      Account[]
+  sessions      Session[]
+  
+  // Audit
+  auditLogs     AuditLog[]
+  
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  
+  @@index([email])
+  @@index([clientId])
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+  
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expires      DateTime
+  
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  
+  @@index([userId])
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+  
+  createdAt  DateTime @default(now())
+  
+  @@unique([identifier, token])
+}
+
+enum UserRole {
+  admin
+  user
+  viewer
+}
+
+// ============================================
+// CLIENT/ORGANIZATION MANAGEMENT (Multi-project)
+// ============================================
+
+model Client {
+  id          String   @id @default(cuid())
+  name        String
+  slug        String   @unique
+  logo        String?
+  primaryColor String? @default("#10B981")
+  isActive    Boolean  @default(true)
+  
+  defaultCurrency String @default("UGX")
+  timezone    String   @default("Africa/Kampala")
+  
+  // Relations
+  users       User[]
+  campaigns   Campaign[]
+  integrations GoogleWorkspaceIntegration[]
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+// ============================================
+// GOOGLE WORKSPACE INTEGRATIONS
+// ============================================
+
+model GoogleWorkspaceIntegration {
+  id          String   @id @default(cuid())
+  clientId    String
+  client      Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  
+  type        String
+  
+  status      IntegrationStatus @default(disconnected)
+  
+  accessToken  String?  @db.Text
+  refreshToken String?  @db.Text
+  expiresAt    DateTime?
+  
+  config      String?  @db.Text
+  
+  spreadsheetId String?
+  sheetName     String?
+  lastSyncRow   Int      @default(1)
+  
+  lastSync      DateTime?
+  syncFrequency  Int      @default(60)
+  lastError      String?  @db.Text
+  totalSynced    Int      @default(0)
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  @@unique([clientId, type])
+}
+
+enum IntegrationStatus {
+  connected
+  disconnected
+  error
+  syncing
+}
+
+// ============================================
+// CAMPAIGN MANAGEMENT
+// ============================================
+
+model Campaign {
+  id          String   @id @default(cuid())
+  clientId    String?
+  client      Client?  @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  
+  name        String
+  slug        String   @unique
+  description String?  @db.Text
+  startDate   DateTime
+  endDate     DateTime
+  status      CampaignStatus @default(draft)
+  budget      Float
+  targetRegistrations Int
+  baseUrl     String
+  
+  // Relations
+  assets      Asset[]
+  utmLinks    UTMLink[]
+  rawData     RawData[]
+  kpiTargets  KPITarget[]
+  alerts      AlertSetting[]
+  influencers Influencer[]
+  leads       Lead[]
+  forecasts   Forecast[]
+  aiInsights  AIInsight[]
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  @@index([clientId])
+  @@index([status])
+}
+
+enum CampaignStatus {
+  draft
+  active
+  paused
+  completed
+  archived
+}
+
+// ============================================
+// ASSET MANAGEMENT
+// ============================================
+
+model Asset {
+  id          String     @id @default(cuid())
+  campaignId  String
+  campaign    Campaign   @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  
+  type        AssetType
+  name        String
+  fileName    String
+  driveLink   String
+  thumbnailUrl String?
+  owner       String
+  version     String     @default("1.0")
+  status      AssetStatus @default(draft)
+  description String?    @db.Text
+  tags        String?
+  
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+  
+  @@index([campaignId])
+}
+
+enum AssetType {
+  image
+  video
+  copy
+  pdf
+  contract
+  document
+  audio
+  other
+}
+
+enum AssetStatus {
+  draft
+  pending_review
+  approved
+  rejected
+  archived
+}
+
+// ============================================
+// UTM LINK MANAGEMENT
+// ============================================
+
+model UTMLink {
+  id          String   @id @default(cuid())
+  campaignId  String
+  campaign    Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  
+  channel     String
+  source      String
+  medium      String
+  content     String
+  term        String?
+  
+  finalUrl    String
+  utmUrl      String
+  
+  createdBy   String
+  clickCount  Int      @default(0)
+  lastClicked DateTime?
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  @@index([campaignId, channel])
+  @@index([campaignId, source])
+}
+
+// ============================================
+// DATA INGESTION & RAW DATA
+// ============================================
+
+model DataSource {
+  id              String   @id @default(cuid())
+  campaignId      String?
+  name            String
+  platform        String
+  status          DataSourceStatus @default(disconnected)
+  
+  credentials     String?  @db.Text
+  apiEndpoint     String?
+  
+  lastSync        DateTime?
+  syncFrequency   Int      @default(1440)
+  lastError       String?  @db.Text
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+enum DataSourceStatus {
+  connected
+  disconnected
+  error
+  syncing
+}
+
+model RawData {
+  id          String   @id @default(cuid())
+  campaignId  String
+  campaign    Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  
+  date        DateTime
+  channel     String
+  metric      MetricType
+  value       Float
+  
+  source      String?
+  rawData     String?  @db.Text
+  
+  createdAt   DateTime @default(now())
+  
+  @@index([campaignId, date])
+  @@index([campaignId, channel])
+  @@index([campaignId, metric])
+}
+
+enum MetricType {
+  impressions
+  clicks
+  spend
+  registrations
+  leads
+  conversions
+  opens
+  bounces
+  revenue
+  cost
+}
+
+// ============================================
+// KPI TRACKING
+// ============================================
+
+model KPITarget {
+  id          String   @id @default(cuid())
+  campaignId  String
+  campaign    Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  
+  metric      String
+  target      Float
+  current     Float    @default(0)
+  unit        String?
+  isLowerBetter Boolean @default(false)
+  
+  lastUpdated DateTime @default(now())
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  @@unique([campaignId, metric])
+}
+
+model KPIHistory {
+  id          String   @id @default(cuid())
+  campaignId  String
+  
+  metric      String
+  value       Float
+  date        DateTime
+  
+  createdAt   DateTime @default(now())
+  
+  @@index([campaignId, metric, date])
+}
+
+// ============================================
+// ALERT SYSTEM
+// ============================================
+
+model AlertSetting {
+  id              String   @id @default(cuid())
+  campaignId      String
+  campaign        Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  
+  metric          String
+  threshold       Float
+  direction       AlertDirection
+  recipientEmails String
+  slackChannel    String?
+  slackWebhook    String?
+  
+  isActive        Boolean  @default(true)
+  cooldownMinutes Int      @default(240)
+  
+  lastTriggered   DateTime?
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  @@index([campaignId])
+}
+
+enum AlertDirection {
+  above
+  below
+}
+
+model AlertLog {
+  id          String   @id @default(cuid())
+  campaignId  String
+  alertId     String?
+  
+  metric      String
+  value       Float
+  threshold   Float
+  direction   AlertDirection
+  
+  recipients  String
+  channels    String
+  
+  sentAt      DateTime @default(now())
+  createdAt   DateTime @default(now())
+  
+  @@index([campaignId, sentAt])
+}
+
+// ============================================
+// AUDIT LOG
+// ============================================
+
+model AuditLog {
+  id          String   @id @default(cuid())
+  campaignId  String?
+  
+  action      String
+  entityType  String
+  entityId    String?
+  details     String?  @db.Text
+  
+  userId      String?
+  user        User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  userEmail   String
+  ipAddress   String?
+  
+  createdAt   DateTime @default(now())
+  
+  @@index([campaignId, createdAt])
+  @@index([entityType, entityId])
+  @@index([userId])
+}
+
+// ============================================
+// INFLUENCER ROI TRACKING
+// ============================================
+
+model Influencer {
+  id            String   @id @default(cuid())
+  campaignId    String
+  campaign      Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  
+  name          String
+  platform      String
+  handle        String
+  followerCount Int?
+  
+  contractFee   Float
+  currency      String   @default("UGX")
+  contractDate  DateTime?
+  deliverables  String?  @db.Text
+  
+  postsCount    Int      @default(0)
+  storiesCount  Int      @default(0)
+  reach         Int      @default(0)
+  engagements   Int      @default(0)
+  linkClicks    Int      @default(0)
+  
+  registrations Int      @default(0)
+  revenue       Float    @default(0)
+  
+  cps           Float    @default(0)
+  roi           Float    @default(0)
+  
+  utmLink       String?
+  promoCode     String?
+  
+  status        InfluencerStatus @default(active)
+  
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  
+  @@index([campaignId, platform])
+}
+
+enum InfluencerStatus {
+  active
+  completed
+  cancelled
+}
+
+// ============================================
+// LEAD MANAGEMENT & NURTURE
+// ============================================
+
+model Lead {
+  id            String   @id @default(cuid())
+  campaignId    String
+  campaign      Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  
+  name          String
+  email         String?
+  phone         String?
+  
+  registeredAt  DateTime @default(now())
+  source        String?
+  channel       String?
+  utmLink       String?
+  influencerId  String?
+  
+  status        LeadStatus @default(pending)
+  amountPaid    Float    @default(0)
+  paymentDate   DateTime?
+  
+  lastContactAt DateTime?
+  contactCount  Int      @default(0)
+  nextFollowUp  DateTime?
+  
+  smsSent       Boolean  @default(false)
+  emailSent     Boolean  @default(false)
+  called        Boolean  @default(false)
+  
+  notes         String?  @db.Text
+  
+  followUpTasks FollowUpTask[]
+  
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  
+  @@index([campaignId, status])
+  @@index([campaignId, influencerId])
+}
+
+enum LeadStatus {
+  pending
+  paid
+  followed_up
+  converted
+  lost
+}
+
+model FollowUpTask {
+  id          String   @id @default(cuid())
+  campaignId  String
+  leadId      String
+  lead        Lead     @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  
+  type        String
+  scheduledAt DateTime
+  executedAt  DateTime?
+  
+  status      String   @default("pending")
+  content     String?  @db.Text
+  
+  createdAt   DateTime @default(now())
+  
+  @@index([campaignId, scheduledAt])
+  @@index([leadId])
+}
+
+// ============================================
+// ENROLLMENT FORECASTING
+// ============================================
+
+model Forecast {
+  id              String   @id @default(cuid())
+  campaignId      String
+  campaign        Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  
+  forecastDate    DateTime @default(now())
+  
+  currentRegistrations  Int
+  daysRemaining         Int
+  avgDailyRate          Float
+  
+  predictedTotal    Int
+  confidence        Float
+  
+  optimisticTotal   Int?
+  pessimisticTotal  Int?
+  
+  recommendation    String?  @db.Text
+  
+  actualTotal       Int?
+  accuracyScore     Float?
+  
+  createdAt       DateTime @default(now())
+  
+  @@index([campaignId, forecastDate])
+}
+
+// ============================================
+// AI INSIGHTS & RECOMMENDATIONS
+// ============================================
+
+model AIInsight {
+  id            String   @id @default(cuid())
+  campaignId    String
+  campaign      Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  
+  type          InsightType
+  title         String
+  description   String   @db.Text
+  
+  analysis      String?  @db.Text
+  
+  recommendations String?  @db.Text
+  
+  metricsInvolved String?
+  
+  priority      String   @default("medium")
+  category      String?
+  
+  isRead        Boolean  @default(false)
+  isActioned    Boolean  @default(false)
+  actionedAt    DateTime?
+  actionedBy    String?
+  
+  createdAt     DateTime @default(now())
+  
+  @@index([campaignId, type])
+  @@index([campaignId, priority])
+}
+
+enum InsightType {
+  campaign_strategy
+  budget_reallocation
+  channel_performance
+  enrollment_forecast
+  influencer_roi
+  lead_nurture
+  trend_analysis
+  anomaly_detection
+}
+
+// ============================================
+// RATE LIMITING
+// ============================================
+
+model RateLimit {
+  id          String   @id @default(cuid())
+  identifier  String   @unique  // IP or user ID
+  endpoint    String
+  requestCount Int    @default(1)
+  windowStart DateTime @default(now())
+  blocked     Boolean  @default(false)
+  blockedUntil DateTime?
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  @@index([identifier, endpoint])
+  @@index([windowStart])
+}
