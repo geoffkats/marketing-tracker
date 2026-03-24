@@ -1,6 +1,8 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { useSession } from 'next-auth/react'
+import { useRouter } from 'next/navigation'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -337,6 +339,32 @@ const navItems: { id: TabId; label: string; icon: React.ReactNode }[] = [
 ]
 
 export default function Home() {
+  const { data: session, status } = useSession()
+  const router = useRouter()
+  
+  // Redirect to login if not authenticated
+  useEffect(() => {
+    if (status === 'loading') return // Still loading
+    if (!session) {
+      router.push('/login')
+      return
+    }
+  }, [session, status, router])
+
+  // Show loading while checking auth
+  if (status === 'loading') {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <Loader2 className="h-8 w-8 animate-spin" />
+      </div>
+    )
+  }
+
+  // Don't render if not authenticated (will redirect)
+  if (!session) {
+    return null
+  }
+
   const [clients, setClients] = useState<Client[]>([])
   const [selectedClientId, setSelectedClientId] = useState<string | null>(null)
   const [campaigns, setCampaigns] = useState<Campaign[]>([])
@@ -354,11 +382,18 @@ export default function Home() {
     const controller = new AbortController()
     
     fetch('/api/clients?includeStats=true', { signal: controller.signal })
-      .then(res => res.json())
+      .then(res => {
+        if (res.status === 401) {
+          router.push('/login')
+          return
+        }
+        if (!res.ok) throw new Error(`Failed to fetch clients: ${res.status}`)
+        return res.json()
+      })
       .then(data => {
-        if (!controller.signal.aborted) {
-          setClients(data.clients)
-          if (data.clients.length > 0) {
+        if (!controller.signal.aborted && data) {
+          setClients(data.clients || [])
+          if (data.clients?.length > 0) {
             setSelectedClientId(data.clients[0].id)
           }
         }
@@ -370,18 +405,25 @@ export default function Home() {
       })
     
     return () => controller.abort()
-  }, [])
+  }, [router])
 
   // Fetch campaigns - only once on mount using AbortController pattern
   useEffect(() => {
     const controller = new AbortController()
     
     fetch('/api/campaigns?includeStats=true', { signal: controller.signal })
-      .then(res => res.json())
+      .then(res => {
+        if (res.status === 401) {
+          router.push('/login')
+          return
+        }
+        if (!res.ok) throw new Error(`Failed to fetch campaigns: ${res.status}`)
+        return res.json()
+      })
       .then(data => {
-        if (!controller.signal.aborted) {
-          setCampaigns(data.campaigns)
-          if (data.campaigns.length > 0) {
+        if (!controller.signal.aborted && data) {
+          setCampaigns(data.campaigns || [])
+          if (data.campaigns?.length > 0) {
             // Select active campaign or first one
             const activeCampaign = data.campaigns.find((c: Campaign) => c.status === 'active')
             setSelectedCampaignId(activeCampaign?.id || data.campaigns[0].id)
@@ -395,7 +437,7 @@ export default function Home() {
       })
     
     return () => controller.abort()
-  }, [])
+  }, [router])
 
   // Fetch campaign data when selectedCampaignId changes
   useEffect(() => {
@@ -405,9 +447,16 @@ export default function Home() {
     
     setLoading(true)
     fetch(`/api/campaigns/${selectedCampaignId}`, { signal: controller.signal })
-      .then(res => res.json())
+      .then(res => {
+        if (res.status === 401) {
+          router.push('/login')
+          return
+        }
+        if (!res.ok) throw new Error(`Failed to fetch campaign data: ${res.status}`)
+        return res.json()
+      })
       .then(data => {
-        if (!controller.signal.aborted) {
+        if (!controller.signal.aborted && data) {
           setCampaignData(data)
         }
       })
@@ -424,7 +473,7 @@ export default function Home() {
       })
     
     return () => controller.abort()
-  }, [selectedCampaignId])
+  }, [selectedCampaignId, router])
 
   // Manual refresh function
   const handleRefresh = async () => {
