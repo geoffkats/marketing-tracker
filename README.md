@@ -5,7 +5,8 @@ A comprehensive marketing campaign tracking and analytics platform for education
 ## 👨‍💻 Developer & Citation
 
 **Developed by:**  
-**kat Geoffrey Synhtilogic**  
+**kato Geoffrey**
+**synthilogic Enterprise**
 Email: katogeoffreyg@gmail.com  
 GitHub: [@geoffkats](https://github.com/geoffkats)
 
