@@ -7,7 +7,7 @@ import { createCampaignSchema, validateBody, paginationSchema } from '@/lib/vali
 import { withRateLimit } from '@/lib/rate-limit'
 
 // Development mode check
-const isDevelopment = process.env.NODE_ENV === 'development'
+const isDevelopment = process.env.NODE_ENV === 'development' || process.env.INIT_MODE === 'true'
 
 // GET /api/campaigns - List all campaigns
 async function getCampaigns(req: NextRequest) {

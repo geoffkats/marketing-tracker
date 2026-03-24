@@ -77,3 +77,6 @@ Thumbs.db
 
 # Examples
 /examples/
+
+.vercel
+.env*.local
