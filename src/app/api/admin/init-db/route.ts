@@ -9,33 +9,81 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    // Try to create tables by making a simple query that will trigger table creation
-    const result = await db.$executeRaw`
-      CREATE TABLE IF NOT EXISTS "User" (
+    // Create ENUMs first
+    await db.$executeRaw`
+      CREATE TYPE IF NOT EXISTS "UserRole" AS ENUM ('admin', 'user', 'viewer');
+    `
+
+    await db.$executeRaw`
+      CREATE TYPE IF NOT EXISTS "CampaignStatus" AS ENUM ('draft', 'active', 'paused', 'completed');
+    `
+
+    // Create Client table
+    await db.$executeRaw`
+      CREATE TABLE IF NOT EXISTS "Client" (
+        "id" TEXT NOT NULL,
+        "name" TEXT NOT NULL,
+        "slug" TEXT NOT NULL,
+        "primaryColor" TEXT DEFAULT '#10B981',
+        "defaultCurrency" TEXT DEFAULT 'UGX',
+        "timezone" TEXT DEFAULT 'Africa/Kampala',
+        "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT "Client_pkey" PRIMARY KEY ("id")
+      );
+    `
+
+    await db.$executeRaw`
+      CREATE UNIQUE INDEX IF NOT EXISTS "Client_slug_key" ON "Client"("slug");
+    `
+
+    // Create or replace User table with proper schema
+    await db.$executeRaw`
+      DROP TABLE IF EXISTS "User" CASCADE;
+    `
+    
+    await db.$executeRaw`
+      CREATE TABLE "User" (
         "id" TEXT NOT NULL,
         "name" TEXT,
         "email" TEXT NOT NULL,
         "emailVerified" TIMESTAMP(3),
         "image" TEXT,
         "password" TEXT,
-        "role" TEXT NOT NULL DEFAULT 'user',
+        "role" "UserRole" NOT NULL DEFAULT 'user',
         "isActive" BOOLEAN NOT NULL DEFAULT true,
         "clientId" TEXT,
         "lastLoginAt" TIMESTAMP(3),
         "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        "updatedAt" TIMESTAMP(3) NOT NULL,
+        "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
         CONSTRAINT "User_pkey" PRIMARY KEY ("id")
       );
     `
 
-    const result2 = await db.$executeRaw`
+    await db.$executeRaw`
       CREATE UNIQUE INDEX IF NOT EXISTS "User_email_key" ON "User"("email");
+    `
+
+    // Create default client
+    await db.$executeRaw`
+      INSERT INTO "Client" ("id", "name", "slug", "primaryColor", "defaultCurrency", "timezone", "createdAt", "updatedAt")
+      VALUES (
+        'default-client-001',
+        'Code Academy Uganda', 
+        'code-academy-uganda',
+        '#10B981',
+        'UGX',
+        'Africa/Kampala',
+        CURRENT_TIMESTAMP,
+        CURRENT_TIMESTAMP
+      )
+      ON CONFLICT ("slug") DO NOTHING;
     `
 
     return NextResponse.json({
       success: true,
-      message: 'Database initialized successfully',
-      tables: 'User table created'
+      message: 'Database initialized successfully with complete schema',
+      tables: 'User table, Client table, and required ENUMs created'
     })
 
   } catch (error) {
