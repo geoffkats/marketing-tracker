@@ -9,13 +9,21 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    // Create ENUMs first
+    // Create ENUMs first - check if they exist
     await db.$executeRaw`
-      CREATE TYPE IF NOT EXISTS "UserRole" AS ENUM ('admin', 'user', 'viewer');
+      DO $$ BEGIN
+      CREATE TYPE "UserRole" AS ENUM ('admin', 'user', 'viewer');
+      EXCEPTION
+      WHEN duplicate_object THEN null;
+      END $$;
     `
 
     await db.$executeRaw`
-      CREATE TYPE IF NOT EXISTS "CampaignStatus" AS ENUM ('draft', 'active', 'paused', 'completed');
+      DO $$ BEGIN
+      CREATE TYPE "CampaignStatus" AS ENUM ('draft', 'active', 'paused', 'completed');
+      EXCEPTION
+      WHEN duplicate_object THEN null;
+      END $$;
     `
 
     // Create Client table
@@ -33,18 +41,10 @@ export async function POST(req: NextRequest) {
       );
     `
 
+    // Create User table with proper UserRole reference
     await db.$executeRaw`
-      CREATE UNIQUE INDEX IF NOT EXISTS "Client_slug_key" ON "Client"("slug");
-    `
-
-    // Create or replace User table with proper schema
-    await db.$executeRaw`
-      DROP TABLE IF EXISTS "User" CASCADE;
-    `
-    
-    await db.$executeRaw`
-      CREATE TABLE "User" (
-        "id" TEXT NOT NULL,
+      CREATE TABLE IF NOT EXISTS "User" (
+        "id" TEXT NOT NULL DEFAULT gen_random_uuid()::text,
         "name" TEXT,
         "email" TEXT NOT NULL,
         "emailVerified" TIMESTAMP(3),
@@ -60,24 +60,20 @@ export async function POST(req: NextRequest) {
       );
     `
 
+    // Create indexes
+    await db.$executeRaw`
+      CREATE UNIQUE INDEX IF NOT EXISTS "Client_slug_key" ON "Client"("slug");
+    `
+    
     await db.$executeRaw`
       CREATE UNIQUE INDEX IF NOT EXISTS "User_email_key" ON "User"("email");
     `
 
-    // Create default client
+    // Insert default client
     await db.$executeRaw`
       INSERT INTO "Client" ("id", "name", "slug", "primaryColor", "defaultCurrency", "timezone", "createdAt", "updatedAt")
-      VALUES (
-        'default-client-001',
-        'Code Academy Uganda', 
-        'code-academy-uganda',
-        '#10B981',
-        'UGX',
-        'Africa/Kampala',
-        CURRENT_TIMESTAMP,
-        CURRENT_TIMESTAMP
-      )
-      ON CONFLICT ("slug") DO NOTHING;
+      SELECT 'default-client-001', 'Code Academy Uganda', 'code-academy-uganda', '#10B981', 'UGX', 'Africa/Kampala', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+      WHERE NOT EXISTS (SELECT 1 FROM "Client" WHERE "slug" = 'code-academy-uganda');
     `
 
     return NextResponse.json({
