@@ -10,7 +10,7 @@ A comprehensive marketing campaign tracking and analytics platform for education
 Email: katogeoffreyg@gmail.com  
 GitHub: [@geoffkats](https://github.com/geoffkats)
 
-> This project was designed and developed by kat Geoffrey Synhtilogic for Code Academy Uganda's marketing operations and campaign management needs.
+> This project was designed and developed by kato Geoffrey  for Code Academy Uganda's marketing operations and campaign management needs.
 
 ---
 
